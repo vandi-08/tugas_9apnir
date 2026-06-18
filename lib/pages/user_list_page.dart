@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+
 import 'add_user_page.dart';
+import 'edit_user_page.dart';
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -12,9 +14,13 @@ class UserListPage extends StatefulWidget {
 
 class _UserListPageState extends State<UserListPage> {
   List users = [];
+  List filteredUsers = [];
+
   bool isLoading = true;
 
-  // Kalau run di Edge/Web, pakai localhost.
+  TextEditingController searchController =
+      TextEditingController();
+
   final String baseUrl = "http://localhost/flutter_api";
 
   @override
@@ -30,7 +36,9 @@ class _UserListPageState extends State<UserListPage> {
 
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/user/get_user.php"),
+        Uri.parse(
+          "$baseUrl/user/get_user.php",
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -38,32 +46,82 @@ class _UserListPageState extends State<UserListPage> {
 
         setState(() {
           users = result["data"] ?? [];
+          filteredUsers = users;
           isLoading = false;
         });
-      } else {
-        setState(() {
-          isLoading = false;
-        });
+      }
+    } catch (e) {
+      print(e);
 
-        if (!mounted) return;
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> deleteUser(String id) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          "$baseUrl/user/delete_user.php",
+        ),
+        body: {
+          "id": id,
+        },
+      );
+
+      final result = jsonDecode(response.body);
+
+      if (result["status"] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Gagal mengambil data user"),
+            content: Text(
+              "User berhasil dihapus",
+            ),
+          ),
+        );
+
+        getUsers();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result["message"],
+            ),
           ),
         );
       }
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-        ),
-      );
+      print(e);
     }
+  }
+
+  void searchUser(String keyword) {
+    if (keyword.isEmpty) {
+      setState(() {
+        filteredUsers = users;
+      });
+      return;
+    }
+
+    final results = users.where((user) {
+      final username =
+          user["username"].toString().toLowerCase();
+
+      final email =
+          user["email"].toString().toLowerCase();
+
+      return username.contains(
+            keyword.toLowerCase(),
+          ) ||
+          email.contains(
+            keyword.toLowerCase(),
+          );
+    }).toList();
+
+    setState(() {
+      filteredUsers = results;
+    });
   }
 
   @override
@@ -83,7 +141,8 @@ class _UserListPageState extends State<UserListPage> {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const AddUserPage(),
+              builder: (context) =>
+                  const AddUserPage(),
             ),
           );
 
@@ -91,23 +150,11 @@ class _UserListPageState extends State<UserListPage> {
             await getUsers();
 
             if (!mounted) return;
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 2),
-                content: Row(
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(result),
-                    ),
-                  ],
-                ),
+                content: Text(result),
               ),
             );
           }
@@ -117,39 +164,210 @@ class _UserListPageState extends State<UserListPage> {
           ? const Center(
               child: CircularProgressIndicator(),
             )
-          : users.isEmpty
-              ? const Center(
-                  child: Text("Data user tidak ditemukan"),
-                )
-              : RefreshIndicator(
-                  onRefresh: getUsers,
-                  child: ListView.builder(
-                    itemCount: users.length,
-                    itemBuilder: (context, index) {
-                      final user = users[index];
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+          : Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.all(12),
+                  child: TextField(
+                    controller:
+                        searchController,
+                    onChanged: searchUser,
+                    decoration:
+                        InputDecoration(
+                      hintText:
+                          "Cari username atau email",
+                      prefixIcon:
+                          const Icon(
+                        Icons.search,
+                      ),
+                      border:
+                          OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(
+                          12,
                         ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: const Color(0xff4A43EC),
-                            child: Text(
-                              user["username"][0].toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          title: Text(user["username"]),
-                          subtitle: Text(user["email"]),
-                        ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
                 ),
+
+                Expanded(
+                  child:
+                      filteredUsers.isEmpty
+                          ? const Center(
+                              child: Text(
+                                "Data user tidak ditemukan",
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount:
+                                  filteredUsers
+                                      .length,
+                              itemBuilder:
+                                  (context,
+                                      index) {
+                                final user =
+                                    filteredUsers[
+                                        index];
+
+                                return Card(
+                                  margin:
+                                      const EdgeInsets.symmetric(
+                                    horizontal:
+                                        12,
+                                    vertical: 6,
+                                  ),
+                                  child:
+                                      ListTile(
+                                    leading:
+                                        CircleAvatar(
+                                      backgroundColor:
+                                          const Color(
+                                        0xff4A43EC,
+                                      ),
+                                      child:
+                                          Text(
+                                        user["username"][0]
+                                            .toUpperCase(),
+                                        style:
+                                            const TextStyle(
+                                          color:
+                                              Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    title:
+                                        Text(
+                                      user[
+                                          "username"],
+                                    ),
+                                    subtitle:
+                                        Text(
+                                      user[
+                                          "email"],
+                                    ),
+                                    trailing:
+                                        Row(
+                                      mainAxisSize:
+                                          MainAxisSize
+                                              .min,
+                                      children: [
+                                        IconButton(
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .edit,
+                                            color:
+                                                Colors.orange,
+                                          ),
+                                          onPressed:
+                                              () async {
+                                            final result =
+                                                await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        EditUserPage(
+                                                  id: user["id"]
+                                                      .toString(),
+                                                  username:
+                                                      user["username"],
+                                                  email:
+                                                      user["email"],
+                                                ),
+                                              ),
+                                            );
+
+                                            if (result !=
+                                                null) {
+                                              await getUsers();
+
+                                              if (!mounted)
+                                                return;
+
+                                              ScaffoldMessenger.of(
+                                                      context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content:
+                                                      Text(result),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon:
+                                              const Icon(
+                                            Icons
+                                                .delete,
+                                            color:
+                                                Colors.red,
+                                          ),
+                                          onPressed:
+                                              () {
+                                            showDialog(
+                                              context:
+                                                  context,
+                                              builder:
+                                                  (
+                                                    context,
+                                                  ) =>
+                                                      AlertDialog(
+                                                title:
+                                                    const Text(
+                                                  "Konfirmasi",
+                                                ),
+                                                content:
+                                                    const Text(
+                                                  "Yakin ingin menghapus user ini?",
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed:
+                                                        () {
+                                                      Navigator.pop(
+                                                        context,
+                                                      );
+                                                    },
+                                                    child:
+                                                        const Text(
+                                                      "Batal",
+                                                    ),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed:
+                                                        () async {
+                                                      Navigator.pop(
+                                                        context,
+                                                      );
+
+                                                      await deleteUser(
+                                                        user["id"]
+                                                            .toString(),
+                                                      );
+                                                    },
+                                                    child:
+                                                        const Text(
+                                                      "Hapus",
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ],
+            ),
     );
   }
 }
